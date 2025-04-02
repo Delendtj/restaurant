@@ -64,7 +64,12 @@ class Cooks implements Runnable {
         this.prepdelay = prepdelay;
     }
 
-@Override
+    public int getCookId() {
+        return cookId;
+    }
+    public Set<String> getMealtype() {return mealtype;}
+
+    @Override
     public void run() {
         try{
             while(!Thread.currentThread().isInterrupted()) {
