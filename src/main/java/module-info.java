@@ -4,6 +4,7 @@ module eksamen.restaurant {
 
     requires org.controlsfx.controls;
     requires org.kordamp.bootstrapfx.core;
+    requires java.desktop;
 
     opens eksamen.restaurant to javafx.fxml;
     exports eksamen.restaurant;
