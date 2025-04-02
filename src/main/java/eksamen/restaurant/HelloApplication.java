@@ -23,5 +23,18 @@ class Order {
     public int getPreptime() {return preptime;}
     public Customer getCustomer(){return customer;}
 
+}
+
+class OrderQueue {
+    private Queue<Order> orders;
+    private final int maxOrders;
+    private final Object lock = new Object();
+
+    public OrderQueue(int maxOrders) {
+    this.maxOrders = maxOrders;
+    orders = new LinkedList<>();
+    }
+
+
 
 }
