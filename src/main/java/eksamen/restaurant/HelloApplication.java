@@ -51,7 +51,34 @@ class OrderQueue {
 
 }
 
+class Cooks implements Runnable {
+    private int cookId;
+    private Set<String> mealtype;
+    private int OrderQueue;
+    private int prepdelay;
 
+    public Cooks(int cookId, Set<String> mealtype, int OrderQueue, int prepdelay) {
+        this.cookId = cookId;
+        this.mealtype = mealtype;
+        this.OrderQueue = OrderQueue;
+        this.prepdelay = prepdelay;
+    }
+
+@Override
+    public void run() {
+        try{
+            while(!Thread.currentThread().isInterrupted()) {
+                //get order
+                //prep meal
+                // get customer
+                //get delay
+            }
+        }
+        catch (Exception e) {
+            Thread.currentThread().interrupt();
+        }
+}
+}
 
 public class HelloApplication extends Application {
     @Override
