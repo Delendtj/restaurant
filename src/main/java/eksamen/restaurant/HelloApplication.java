@@ -151,7 +151,7 @@ class OrderQueue {
         synchronized (lock) {
             while (orders.size() >= maxOrders) {
                 System.out.println("Køen er full – " + order.getCustomer().getName() + " venter...");
-                lock.wait();
+                lock.wait(); // vent til det er plass
             }
 
             orders.offer(order);
