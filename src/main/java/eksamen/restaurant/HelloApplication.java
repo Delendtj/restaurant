@@ -63,15 +63,35 @@ class CustomerTask implements Runnable {
                 Thread.sleep(3000 + random.nextInt(3000)); // 3–6 sekunder
 
                 String meal = MEALS[random.nextInt(MEALS.length)];
-                int prepTime = 1000 + random.nextInt(2000);
-                int orderId = getNextOrderId();
+                int prepTime;
+                switch (meal) {
+                    case "Burger" -> prepTime = 2000;
+                    case "Fries" -> prepTime = 1500;
+                    case "Salad" -> prepTime = 1000;
+                    default -> prepTime = 2000; // fallback
+                }
 
+                int orderId = getNextOrderId();
                 Order order = new Order(orderId, meal, prepTime, customer);
+                long startTime = System.currentTimeMillis();
+
                 synchronized (orderQueue) {
                     orderQueue.addOrder(order); // Bruk metoden fra OrderQueue
                 }
 
                 System.out.println(customer.getName() + " la inn en ny bestilling: " + meal);
+
+                long maxWaitTime = 2100;
+                Thread.sleep(maxWaitTime);
+
+                long timeElapsed = System.currentTimeMillis() - startTime;
+                if (timeElapsed <= maxWaitTime + prepTime) {
+                    System.out.println("😊 " + customer.getName() + " fikk maten i tide og er fornøyd!");
+                } else {
+                    System.out.println("😠 " + customer.getName() + " ble utålmodig og gikk sin vei!");
+                    break; // Avslutter kunden
+                }
+
             }
         } catch (InterruptedException e) {
             System.out.println(customer.getName() + " avslutter bestillinger.");
@@ -118,9 +138,9 @@ class OrderQueue {
     private ObservableList<String> uiOrderList;
 
     public OrderQueue(int maxOrders, ObservableList<String> uiOrderList) {
-    this.maxOrders = maxOrders;
-    orders = new LinkedList<>();
-    this.uiOrderList = uiOrderList;
+        this.maxOrders = maxOrders;
+        orders = new LinkedList<>();
+        this.uiOrderList = uiOrderList;
     }
 
     public Order getOrder(Set<String> cookMealTypes) throws InterruptedException {
@@ -145,7 +165,7 @@ class OrderQueue {
         }
 
 
-}
+    }
 
     public void addOrder(Order order) throws InterruptedException {
         synchronized (lock) {
