@@ -133,7 +133,6 @@ class Cooks implements Runnable {
                         System.out.println("Cook " + cookId + " interrupted while cooking order " + order.getOrderId());
                         Thread.currentThread().interrupt();
                     }
-
                 }
             }
         } catch (Exception e) {
@@ -215,7 +214,7 @@ public class HelloApplication extends Application {
         root.setRight(rightPanel);
         root.setBottom(bottomPanel);
 
-        Scene scene = new Scene(root, 1000, 700);
+        Scene scene = new Scene(root, 600, 400);
         primaryStage.setScene(scene);
         primaryStage.show();
     }
