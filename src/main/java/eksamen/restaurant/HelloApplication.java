@@ -17,6 +17,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.layout.CornerRadii;
 import javafx.geometry.Insets;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 class Customer {
     private int customerId;
@@ -45,90 +46,127 @@ class Customer {
         return name + " (ID: " + customerId + ")";
     }
 }
+
 class CustomerTask implements Runnable {
     private Customer customer;
     private OrderQueue orderQueue;
+    private ObservableList<String> customerList;
     private static final String[] MEALS = {"Burger", "Fries", "Salad"};
     private static final Random random = new Random();
 
-    public CustomerTask(Customer customer, OrderQueue orderQueue) {
+    // Map to track orders and their completion status
+    private static final Map<Integer, Boolean> completedOrders = new ConcurrentHashMap<>();
+
+    public CustomerTask(Customer customer, OrderQueue orderQueue, ObservableList<String> customerList) {
         this.customer = customer;
         this.orderQueue = orderQueue;
+        this.customerList = customerList;
     }
 
     @Override
     public void run() {
         try {
             while (!Thread.currentThread().isInterrupted()) {
-                Thread.sleep(3000 + random.nextInt(3000)); // 3–6 sekunder
+                Thread.sleep(3000 + random.nextInt(3000)); // 3–6 seconds wait
 
                 String meal = MEALS[random.nextInt(MEALS.length)];
-                int prepTime;
-                switch (meal) {
-                    case "Burger" -> prepTime = 2000;
-                    case "Fries" -> prepTime = 1500;
-                    case "Salad" -> prepTime = 1000;
-                    default -> prepTime = 2000; // fallback
-                }
+                int prepTime = switch (meal) {
+                    case "Burger" -> 2000;
+                    case "Fries" -> 1500;
+                    case "Salad" -> 1000;
+                    default -> 2000;
+                };
 
                 int orderId = getNextOrderId();
                 Order order = new Order(orderId, meal, prepTime, customer);
-                long startTime = System.currentTimeMillis();
+
+
+                completedOrders.put(orderId, false);
+
+                Platform.runLater(() -> {
+                    if (!customerList.contains(customer.toString())) {
+                        customerList.add(customer.toString());
+                    }
+                });
+
 
                 synchronized (orderQueue) {
-                    orderQueue.addOrder(order); // Bruk metoden fra OrderQueue
+                    orderQueue.addOrder(order);
                 }
 
                 System.out.println(customer.getName() + " la inn en ny bestilling: " + meal);
 
-                long maxWaitTime = 2100;
-                Thread.sleep(maxWaitTime);
 
-                long timeElapsed = System.currentTimeMillis() - startTime;
-                if (timeElapsed <= maxWaitTime + prepTime) {
-                    System.out.println("😊 " + customer.getName() + " fikk maten i tide og er fornøyd!");
-                } else {
-                    System.out.println("😠 " + customer.getName() + " ble utålmodig og gikk sin vei!");
-                    break; // Avslutter kunden
+                long startTime = System.currentTimeMillis();
+                long maxWaitTime = 15000;
+                boolean orderReceived = false;
+
+
+                while ((System.currentTimeMillis() - startTime) < maxWaitTime) {
+                    // Check if order has been completed
+                    if (completedOrders.getOrDefault(orderId, false)) {
+                        orderReceived = true;
+                        break;
+                    }
+                    Thread.sleep(100); // Small sleep to avoid CPU spinning
                 }
 
+
+                if (orderReceived) {
+                    System.out.println("😊 " + customer.getName() + " fikk maten i tide og er fornøyd!");
+                    Platform.runLater(() -> customerList.remove(customer.toString()));
+                } else {
+
+                    System.out.println("😠 " + customer.getName() + " ble utålmodig og gikk sin vei!");
+                    orderQueue.cancelOrder(orderId);
+                    Platform.runLater(() -> customerList.remove(customer.toString()));
+                    break; // Customer leaves
+                }
+
+                // Clean up the completed order tracking
+                completedOrders.remove(orderId);
             }
         } catch (InterruptedException e) {
-            System.out.println(customer.getName() + " avslutter bestillinger.");
+            Platform.runLater(() -> customerList.remove(customer.toString()));
             Thread.currentThread().interrupt();
         } catch (Exception ex) {
             ex.printStackTrace();
         }
     }
 
-    private static int nextOrderId = 1; // Fortsetter etter sample-order #5
+    private static int nextOrderId = 1;
 
     private static synchronized int getNextOrderId() {
         return nextOrderId++;
     }
-}
 
+    // Method for cooks to mark an order as completed
+    public static void markOrderCompleted(int orderId) {
+        completedOrders.put(orderId, true);
+    }
+}
 
 class Order {
     private int orderId;
     private String mealType;
     private int preptime;
     private Customer customer;
+    private boolean cancelled;
 
-
-    public Order ( int orderId, String mealType, int preptime, Customer customer ) {
-
+    public Order(int orderId, String mealType, int preptime, Customer customer) {
         this.orderId = orderId;
         this.mealType = mealType;
         this.preptime = preptime;
         this.customer = customer;
+        this.cancelled = false;
     }
 
     public int getOrderId() {return orderId;}
     public String getMealType() {return mealType;}
     public int getPreptime() {return preptime;}
-    public Customer getCustomer(){return customer;}
-
+    public Customer getCustomer() {return customer;}
+    public boolean isCancelled() {return cancelled;}
+    public void setCancelled(boolean cancelled) {this.cancelled = cancelled;}
 }
 
 class OrderQueue {
@@ -136,6 +174,7 @@ class OrderQueue {
     private int maxOrders;
     private final Object lock = new Object();
     private ObservableList<String> uiOrderList;
+    private Set<Integer> cancelledOrders = new HashSet<>();
 
     public OrderQueue(int maxOrders, ObservableList<String> uiOrderList) {
         this.maxOrders = maxOrders;
@@ -150,9 +189,20 @@ class OrderQueue {
                     lock.wait();
                 }
 
-                for (Order order : orders) {
+                Iterator<Order> iterator = orders.iterator();
+                while (iterator.hasNext()) {
+                    Order order = iterator.next();
+
+                    // Skip cancelled orders
+                    if (cancelledOrders.contains(order.getOrderId())) {
+                        iterator.remove();
+                        cancelledOrders.remove(order.getOrderId());
+                        updateGuiList();
+                        continue;
+                    }
+
                     if (cookMealTypes.contains(order.getMealType())) {
-                        orders.remove(order); // found match
+                        iterator.remove(); // found match
                         updateGuiList();
                         lock.notifyAll(); // notify customers waiting
                         return order;
@@ -163,8 +213,6 @@ class OrderQueue {
                 lock.wait();
             }
         }
-
-
     }
 
     public void addOrder(Order order) throws InterruptedException {
@@ -181,8 +229,16 @@ class OrderQueue {
         }
     }
 
+    public void cancelOrder(int orderId) {
+        synchronized (lock) {
+            cancelledOrders.add(orderId);
+            System.out.println(" -> Order " + orderId + " cancelled by customer");
+            // We'll actually remove the order next time getOrder is called
+            lock.notifyAll();
+        }
+    }
 
-    private void updateGuiList(){
+    private void updateGuiList() {
         if (uiOrderList != null) {
             Platform.runLater(() -> {
                 uiOrderList.clear();
@@ -192,11 +248,13 @@ class OrderQueue {
             });
         }
     }
-    public void increaseMaxOrders(){
+
+    public void increaseMaxOrders() {
         maxOrders++;
         System.out.println(" -> Increase max orders: " + maxOrders);
     }
-    public void decreaseMaxOrders(){
+
+    public void decreaseMaxOrders() {
         maxOrders--;
         System.out.println(" -> Decrease max orders to: " + maxOrders);
     }
@@ -231,6 +289,10 @@ class Cooks implements Runnable {
                     try {
                         long timeToPrepare = order.getPreptime() * prepdelay;
                         Thread.sleep(timeToPrepare);
+
+                        // Order is now ready - notify the customer
+                        CustomerTask.markOrderCompleted(order.getOrderId());
+
                         Platform.runLater(() -> {
                             servedOrdersList.add("Order " + order.getOrderId() + ": " + order.getMealType() + " for " + order.getCustomer().getName() + " served!");
                             cookstatusLabel.setText("Idle");
@@ -244,13 +306,8 @@ class Cooks implements Runnable {
         } catch (Exception e) {
             Thread.currentThread().interrupt();
         }
-
     }
-
 }
-
-
-
 
 public class HelloApplication extends Application {
     @Override
@@ -258,18 +315,16 @@ public class HelloApplication extends Application {
         primaryStage.setTitle("Restaurant Simulation");
         ObservableList<String> uiOrderList = FXCollections.observableArrayList();
         ObservableList<String> servedOrdersList = FXCollections.observableArrayList();
+        ObservableList<String> currentCustomersList = FXCollections.observableArrayList();
         OrderQueue orderQueue = new OrderQueue(5, uiOrderList);
-
-
-
 
         Set<String> cook1Meals = new HashSet<>(List.of("Burger"));
         Set<String> cook2Meals = new HashSet<>(List.of("Fries"));
         Set<String> cook3Meals = new HashSet<>(List.of("Salad"));
 
-        Label cook1Status = new Label("idle");
-        Label cook2Status = new Label("idle");
-        Label cook3Status = new Label("idle");
+        Label cook1Status = new Label("Idle");
+        Label cook2Status = new Label("Idle");
+        Label cook3Status = new Label("Idle");
         // Start cooks in separate threads
         Thread cook1 = new Thread(new Cooks(1, cook1Meals, orderQueue, 5, servedOrdersList, cook1Status));
         Thread cook2 = new Thread(new Cooks(2, cook2Meals, orderQueue, 5, servedOrdersList, cook2Status));
@@ -279,31 +334,25 @@ public class HelloApplication extends Application {
         cook2.start();
         cook3.start();
 
-
-
-
-        for (int i = 1; i <= 3; i++) {
+        for (int i = 1; i <= 20; i++) {
             Customer customer = new Customer(i);
-            Thread customerThread = new Thread(new CustomerTask(customer, orderQueue));
-            customerThread.setDaemon(true); // thread ends when app closes
+            Thread customerThread = new Thread(new CustomerTask(customer, orderQueue, currentCustomersList));
+            customerThread.setDaemon(true);
             customerThread.start();
         }
 
+        Button increaseMaxOrderButton = new Button("Increase Max acceptable orders in queue");
+        increaseMaxOrderButton.setOnAction(e -> orderQueue.increaseMaxOrders());
 
-
-
-
-        Button increaseMaxOrderButton = new Button ("Increase Max acceptable orders in queue");
-        increaseMaxOrderButton.setOnAction (e-> orderQueue.increaseMaxOrders());
-
-        Button decreaseMaxOrderButton = new Button ("Decrease Max acceptable orders in queue");
-        decreaseMaxOrderButton.setOnAction (e-> orderQueue.decreaseMaxOrders());
+        Button decreaseMaxOrderButton = new Button("Decrease Max acceptable orders in queue");
+        decreaseMaxOrderButton.setOnAction(e -> orderQueue.decreaseMaxOrders());
 
         // --- UI Setup ---
         VBox leftPanel = new VBox(10);
         leftPanel.setPadding(new Insets(10));
         leftPanel.setBackground(new Background(new BackgroundFill(Color.YELLOW, CornerRadii.EMPTY, Insets.EMPTY)));
-        leftPanel.getChildren().add(new Label("👤 Customers"));
+        ListView<String> customerListView = new ListView<>(currentCustomersList);
+        leftPanel.getChildren().addAll(new Label("👤 Customers"), customerListView);
 
         // Center - Order Queue (binds to observable list)
         VBox centerPanel = new VBox(10);
@@ -329,7 +378,6 @@ public class HelloApplication extends Application {
         bottomPanel.setBackground(new Background(new BackgroundFill(Color.LIGHTGREEN, CornerRadii.EMPTY, Insets.EMPTY)));
         ListView<String> servedOrdersView = new ListView<>(servedOrdersList);
         bottomPanel.getChildren().addAll(new Label("✅ Served Orders"), servedOrdersView);
-
 
         BorderPane root = new BorderPane();
         root.setLeft(leftPanel);
