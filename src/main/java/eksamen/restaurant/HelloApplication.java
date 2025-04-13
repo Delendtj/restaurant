@@ -80,7 +80,7 @@ class CustomerTask implements Runnable {
                 int orderId = getNextOrderId();
                 Order order = new Order(orderId, meal, prepTime, customer);
 
-
+                // Initialize this order as not completed
                 completedOrders.put(orderId, false);
 
                 Platform.runLater(() -> {
@@ -89,19 +89,19 @@ class CustomerTask implements Runnable {
                     }
                 });
 
-
+                // Add the order to the queue
                 synchronized (orderQueue) {
                     orderQueue.addOrder(order);
                 }
 
                 System.out.println(customer.getName() + " la inn en ny bestilling: " + meal);
 
-
+                // Start timing - customer waits for order
                 long startTime = System.currentTimeMillis();
-                long maxWaitTime = 15000;
+                long maxWaitTime = 10000; // 10 seconds max wait
                 boolean orderReceived = false;
 
-
+                // Wait until either order is complete or timeout
                 while ((System.currentTimeMillis() - startTime) < maxWaitTime) {
                     // Check if order has been completed
                     if (completedOrders.getOrDefault(orderId, false)) {
@@ -111,12 +111,12 @@ class CustomerTask implements Runnable {
                     Thread.sleep(100); // Small sleep to avoid CPU spinning
                 }
 
-
+                // Handle result based on whether order was received
                 if (orderReceived) {
                     System.out.println("😊 " + customer.getName() + " fikk maten i tide og er fornøyd!");
                     Platform.runLater(() -> customerList.remove(customer.toString()));
                 } else {
-
+                    // Customer leaves without food - cancel the order
                     System.out.println("😠 " + customer.getName() + " ble utålmodig og gikk sin vei!");
                     orderQueue.cancelOrder(orderId);
                     Platform.runLater(() -> customerList.remove(customer.toString()));
