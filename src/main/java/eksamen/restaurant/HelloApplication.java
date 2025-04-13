@@ -3,6 +3,7 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.scene.control.Button;
 import javafx.scene.layout.Background;
 import javafx.scene.layout.BackgroundFill;
 import javafx.scene.layout.VBox;
@@ -17,35 +18,6 @@ import javafx.scene.layout.CornerRadii;
 import javafx.geometry.Insets;
 import java.util.*;
 
-//customer template
-class Customer {
-    private int customerId;
-    private String name; // Optional: Add a name if desired
-
-    public Customer(int customerId) {
-        this.customerId = customerId;
-        this.name = "Customer " + customerId; // Example name
-    }
-
-    public Customer(int customerId, String name) {
-        this.customerId = customerId;
-        this.name = name;
-    }
-
-    public int getCustomerId() {
-        return customerId;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    @Override
-    public String toString() {
-
-        return name + " (ID: " + customerId + ")";
-    }
-}
 
 class Order {
     private int orderId;
@@ -71,7 +43,7 @@ class Order {
 
 class OrderQueue {
     private Queue<Order> orders;
-    private final int maxOrders;
+    private int maxOrders;
     private final Object lock = new Object();
     private ObservableList<String> uiOrderList;
 
@@ -79,25 +51,6 @@ class OrderQueue {
     this.maxOrders = maxOrders;
     orders = new LinkedList<>();
     this.uiOrderList = uiOrderList;
-
-        Customer cust1 = new Customer(101, "Alice");
-        Customer cust2 = new Customer(102, "Bob");
-        Customer cust3 = new Customer(103, "Charlie");
-        Customer cust4 = new Customer(104, "Diana");
-
-        // Create some sample Orders (ensure meal types match what your cooks can make)
-        Order sampleOrder1 = new Order(1, "Burger", 2000, cust1); // Prep time in ms
-        Order sampleOrder2 = new Order(2, "Fries", 1000, cust1);
-        Order sampleOrder3 = new Order(3, "Salad", 1500, cust2);
-        Order sampleOrder4 = new Order(4, "Burger", 2000, cust3);
-        Order sampleOrder5 = new Order(5, "Salad", 1500, cust4);   // Assuming a cook can make "Soda"
-
-        // Add to the queue
-        addInitialOrder(sampleOrder1);
-        addInitialOrder(sampleOrder2);
-        addInitialOrder(sampleOrder3);
-        addInitialOrder(sampleOrder4);
-        addInitialOrder(sampleOrder5);
     }
     private void addInitialOrder(Order order) {
         if (this.orders.size() < this.maxOrders) {
@@ -133,6 +86,14 @@ class OrderQueue {
             });
         }
     }
+    public void increaseMaxOrders(){
+        maxOrders++;
+        System.out.println(" -> Increase max orders: " + maxOrders);
+    }
+    public void decreaseMaxOrders(){
+        maxOrders--;
+        System.out.println(" -> Decrease max orders to: " + maxOrders);
+    }
 }
 
 class Cooks implements Runnable {
@@ -141,13 +102,15 @@ class Cooks implements Runnable {
     private final OrderQueue orderQueue;
     private final int prepdelay;
     private final ObservableList<String> servedOrdersList;
+    private final Label cookstatusLabel;
 
-    public Cooks(int cookId, Set<String> mealtype, OrderQueue orderQueue, int prepdelay, ObservableList<String> servedOrdersList) {
+    public Cooks(int cookId, Set<String> mealtype, OrderQueue orderQueue, int prepdelay, ObservableList<String> servedOrdersList, Label cookstatusLabel) {
         this.cookId = cookId;
         this.mealtype = mealtype;
         this.orderQueue = orderQueue;
         this.prepdelay = prepdelay;
         this.servedOrdersList = servedOrdersList;
+        this.cookstatusLabel = cookstatusLabel;
     }
 
     @Override
@@ -157,15 +120,20 @@ class Cooks implements Runnable {
                 Order order = orderQueue.getOrder(mealtype);
                 if (order != null) {
                     System.out.println("Cook " + cookId + " processing order " + order.getOrderId() + ": " + order.getMealType() + " for Customer " + order.getCustomer().getName());
+                    Platform.runLater(() -> cookstatusLabel.setText("Cooking: " + order.getMealType() + " for " + order.getCustomer().getName()));
 
                     try {
                         long timeToPrepare = order.getPreptime() * prepdelay;
                         Thread.sleep(timeToPrepare);
-                        Platform.runLater(() -> servedOrdersList.add("Order " + order.getOrderId() + ": " + order.getMealType() + " for " + order.getCustomer().getName() + " served!"));
+                        Platform.runLater(() -> {
+                            servedOrdersList.add("Order " + order.getOrderId() + ": " + order.getMealType() + " for " + order.getCustomer().getName() + " served!");
+                            cookstatusLabel.setText("Idle");
+                        });
                     } catch (InterruptedException e) {
                         System.out.println("Cook " + cookId + " interrupted while cooking order " + order.getOrderId());
                         Thread.currentThread().interrupt();
                     }
+
                 }
             }
         } catch (Exception e) {
@@ -189,14 +157,25 @@ public class HelloApplication extends Application {
         Set<String> cook2Meals = new HashSet<>(List.of("Fries"));
         Set<String> cook3Meals = new HashSet<>(List.of("Salad"));
 
+        Label cook1Status = new Label("idle");
+        Label cook2Status = new Label("idle");
+        Label cook3Status = new Label("idle");
         // Start cooks in separate threads
-        Thread cook1 = new Thread(new Cooks(1, cook1Meals, orderQueue, 10, servedOrdersList));
-        Thread cook2 = new Thread(new Cooks(2, cook2Meals, orderQueue, 10, servedOrdersList));
-        Thread cook3 = new Thread(new Cooks(3, cook3Meals, orderQueue, 10, servedOrdersList));
+        Thread cook1 = new Thread(new Cooks(1, cook1Meals, orderQueue, 5, servedOrdersList, cook1Status));
+        Thread cook2 = new Thread(new Cooks(2, cook2Meals, orderQueue, 5, servedOrdersList, cook2Status));
+        Thread cook3 = new Thread(new Cooks(3, cook3Meals, orderQueue, 5, servedOrdersList, cook3Status));
 
         cook1.start();
         cook2.start();
         cook3.start();
+
+
+
+        Button increaseMaxOrderButton = new Button ("Increase Max acceptable orders in queue");
+        increaseMaxOrderButton.setOnAction (e-> orderQueue.increaseMaxOrders());
+
+        Button decreaseMaxOrderButton = new Button ("Decrease Max acceptable orders in queue");
+        decreaseMaxOrderButton.setOnAction (e-> orderQueue.decreaseMaxOrders());
 
         // --- UI Setup ---
         VBox leftPanel = new VBox(10);
@@ -209,15 +188,17 @@ public class HelloApplication extends Application {
         centerPanel.setPadding(new Insets(10));
         ListView<String> orderQueueView = new ListView<>(uiOrderList);
         centerPanel.getChildren().addAll(new Label("🧾 Order Queue"), orderQueueView);
+        centerPanel.getChildren().add(increaseMaxOrderButton);
+        centerPanel.getChildren().add(decreaseMaxOrderButton);
 
         // Right - Cooks (static labels for now)
         VBox rightPanel = new VBox(10);
         rightPanel.setPadding(new Insets(10));
         rightPanel.setBackground(new Background(new BackgroundFill(Color.LIGHTBLUE, CornerRadii.EMPTY, Insets.EMPTY)));
         rightPanel.getChildren().addAll(
-                new Label("⏳ Cook 1 (Burger)"),
-                new Label("⏳ Cook 2 (Fries)"),
-                new Label("⏳ Cook 3 (Salad)")
+                new Label("⏳ Cook 1"), cook1Status,
+                new Label("⏳ Cook 2"), cook2Status,
+                new Label("⏳ Cook 3"), cook3Status
         );
 
         // Bottom - Served Orders
@@ -234,7 +215,7 @@ public class HelloApplication extends Application {
         root.setRight(rightPanel);
         root.setBottom(bottomPanel);
 
-        Scene scene = new Scene(root, 600, 400);
+        Scene scene = new Scene(root, 1000, 700);
         primaryStage.setScene(scene);
         primaryStage.show();
     }
