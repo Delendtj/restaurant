@@ -81,7 +81,7 @@ class CustomerTask implements Runnable {
         }
     }
 
-    private static int nextOrderId = 6; // Fortsetter etter sample-order #5
+    private static int nextOrderId = 1; // Fortsetter etter sample-order #5
 
     private static synchronized int getNextOrderId() {
         return nextOrderId++;
@@ -122,30 +122,30 @@ class OrderQueue {
     orders = new LinkedList<>();
     this.uiOrderList = uiOrderList;
     }
-    private void addInitialOrder(Order order) {
-        if (this.orders.size() < this.maxOrders) {
-            this.orders.offer(order);
-            System.out.println(" -> Added initial order: ID " + order.getOrderId() + " (" + order.getMealType() + ")");
-        } else {
-            System.out.println(" -> Queue full (max=" + this.maxOrders + "). Could not add initial order ID " + order.getOrderId());
-        }
-    }
+
     public Order getOrder(Set<String> cookMealTypes) throws InterruptedException {
         synchronized (lock) {
-            while (orders.isEmpty()) {
-                lock.wait(); // If no orders, wait
-            }
+            while (true) {
+                while (orders.isEmpty()) {
+                    lock.wait();
+                }
 
-            Order order = orders.peek();
-            if (cookMealTypes.contains(order.getMealType())) {
-                orders.poll();
-                updateGuiList();
-                return order;
-            } else {
-                return null;
+                for (Order order : orders) {
+                    if (cookMealTypes.contains(order.getMealType())) {
+                        orders.remove(order); // found match
+                        updateGuiList();
+                        lock.notifyAll(); // notify customers waiting
+                        return order;
+                    }
+                }
+
+                // No suitable order found, wait for something new
+                lock.wait();
             }
         }
-    }
+
+
+}
 
     public void addOrder(Order order) throws InterruptedException {
         synchronized (lock) {
@@ -262,6 +262,17 @@ public class HelloApplication extends Application {
 
 
 
+        for (int i = 1; i <= 3; i++) {
+            Customer customer = new Customer(i);
+            Thread customerThread = new Thread(new CustomerTask(customer, orderQueue));
+            customerThread.setDaemon(true); // thread ends when app closes
+            customerThread.start();
+        }
+
+
+
+
+
         Button increaseMaxOrderButton = new Button ("Increase Max acceptable orders in queue");
         increaseMaxOrderButton.setOnAction (e-> orderQueue.increaseMaxOrders());
 
@@ -306,7 +317,7 @@ public class HelloApplication extends Application {
         root.setRight(rightPanel);
         root.setBottom(bottomPanel);
 
-        Scene scene = new Scene(root, 600, 400);
+        Scene scene = new Scene(root, 1000, 700);
         primaryStage.setScene(scene);
         primaryStage.show();
     }
