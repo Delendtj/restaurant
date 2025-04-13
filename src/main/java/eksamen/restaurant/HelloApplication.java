@@ -55,6 +55,13 @@ class CustomerTask implements Runnable {
         this.customer = customer;
         this.orderQueue = orderQueue;
     }
+    private ObservableList<String> customerLog;
+
+    public CustomerTask(Customer customer, OrderQueue orderQueue, ObservableList<String> customerLog) {
+        this.customer = customer;
+        this.orderQueue = orderQueue;
+        this.customerLog = customerLog;
+    }
 
     @Override
     public void run() {
@@ -68,7 +75,7 @@ class CustomerTask implements Runnable {
                     case "Burger" -> prepTime = 2000;
                     case "Fries" -> prepTime = 1500;
                     case "Salad" -> prepTime = 1000;
-                    default -> prepTime = 2000; // fallback
+                    default -> prepTime = 2000;
                 }
 
                 int orderId = getNextOrderId();
@@ -76,36 +83,44 @@ class CustomerTask implements Runnable {
                 long startTime = System.currentTimeMillis();
 
                 synchronized (orderQueue) {
-                    orderQueue.addOrder(order); // Bruk metoden fra OrderQueue
+                    orderQueue.addOrder(order);
                 }
 
-                System.out.println(customer.getName() + " la inn en ny bestilling: " + meal);
+                System.out.println(customer.getName() + " placed a new order: " + meal);
+                Platform.runLater(() -> {
+                    customerLog.add(customer.getName() + " ordered: " + meal);
+                });
 
-                long maxWaitTime = 2100;
+
+                long maxWaitTime = 25000;
                 Thread.sleep(maxWaitTime);
 
                 long timeElapsed = System.currentTimeMillis() - startTime;
                 if (timeElapsed <= maxWaitTime + prepTime) {
-                    System.out.println("😊 " + customer.getName() + " fikk maten i tide og er fornøyd!");
+                    System.out.println("😊 " + customer.getName() + " got the food on time is is happy!");
                 } else {
-                    System.out.println("😠 " + customer.getName() + " ble utålmodig og gikk sin vei!");
-                    break; // Avslutter kunden
+                    System.out.println("😠 " + customer.getName() + " got impatient and walked away!");
+                    Platform.runLater(() -> {
+                        customerLog.removeIf(s -> s.startsWith(customer.getName() + " ordered"));
+                    });
+                    break;
                 }
 
             }
         } catch (InterruptedException e) {
-            System.out.println(customer.getName() + " avslutter bestillinger.");
+            System.out.println(customer.getName() + " closing orders.");
             Thread.currentThread().interrupt();
         } catch (Exception ex) {
             ex.printStackTrace();
         }
     }
 
-    private static int nextOrderId = 1; // Fortsetter etter sample-order #5
+    private static int nextOrderId = 1; //
 
     private static synchronized int getNextOrderId() {
         return nextOrderId++;
     }
+
 }
 
 
@@ -170,12 +185,12 @@ class OrderQueue {
     public void addOrder(Order order) throws InterruptedException {
         synchronized (lock) {
             while (orders.size() >= maxOrders) {
-                System.out.println("Køen er full – " + order.getCustomer().getName() + " venter...");
+                System.out.println("Queue is full – " + order.getCustomer().getName() + " waiting...");
                 lock.wait(); // vent til det er plass
             }
 
             orders.offer(order);
-            System.out.println(" -> Ny bestilling: ID " + order.getOrderId() + " (" + order.getMealType() + ")");
+            System.out.println(" -> New order: ID " + order.getOrderId() + " (" + order.getMealType() + ")");
             updateGuiList();
             lock.notifyAll();
         }
@@ -258,7 +273,10 @@ public class HelloApplication extends Application {
         primaryStage.setTitle("Restaurant Simulation");
         ObservableList<String> uiOrderList = FXCollections.observableArrayList();
         ObservableList<String> servedOrdersList = FXCollections.observableArrayList();
+        ObservableList<String> activeCustomersList = FXCollections.observableArrayList();
+
         OrderQueue orderQueue = new OrderQueue(5, uiOrderList);
+        final int[] customerIdCounter = {1}; // unik ID-start
 
 
 
@@ -282,9 +300,10 @@ public class HelloApplication extends Application {
 
 
 
-        for (int i = 1; i <= 3; i++) {
-            Customer customer = new Customer(i);
-            Thread customerThread = new Thread(new CustomerTask(customer, orderQueue));
+        for (int i = 1; i <= 10; i++) {
+            int id = customerIdCounter[0]++;
+            Customer customer = new Customer(id, "Customer " + id);
+            Thread customerThread = new Thread(new CustomerTask(customer, orderQueue, activeCustomersList));
             customerThread.setDaemon(true); // thread ends when app closes
             customerThread.start();
         }
@@ -304,6 +323,9 @@ public class HelloApplication extends Application {
         leftPanel.setPadding(new Insets(10));
         leftPanel.setBackground(new Background(new BackgroundFill(Color.YELLOW, CornerRadii.EMPTY, Insets.EMPTY)));
         leftPanel.getChildren().add(new Label("👤 Customers"));
+        ListView<String> customerListView = new ListView<>(activeCustomersList);
+        leftPanel.getChildren().add(customerListView);
+
 
         // Center - Order Queue (binds to observable list)
         VBox centerPanel = new VBox(10);
