@@ -17,14 +17,13 @@ import javafx.scene.layout.CornerRadii;
 import javafx.geometry.Insets;
 import java.util.*;
 
-//customer template
 class Customer {
     private int customerId;
-    private String name; // Optional: Add a name if desired
+    private String name;
 
     public Customer(int customerId) {
         this.customerId = customerId;
-        this.name = "Customer " + customerId; // Example name
+        this.name = "Customer " + customerId;
     }
 
     public Customer(int customerId, String name) {
@@ -42,8 +41,49 @@ class Customer {
 
     @Override
     public String toString() {
-
         return name + " (ID: " + customerId + ")";
+    }
+}
+class CustomerTask implements Runnable {
+    private Customer customer;
+    private OrderQueue orderQueue;
+    private static final String[] MEALS = {"Burger", "Fries", "Salad"};
+    private static final Random random = new Random();
+
+    public CustomerTask(Customer customer, OrderQueue orderQueue) {
+        this.customer = customer;
+        this.orderQueue = orderQueue;
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (!Thread.currentThread().isInterrupted()) {
+                Thread.sleep(3000 + random.nextInt(3000)); // 3–6 sekunder
+
+                String meal = MEALS[random.nextInt(MEALS.length)];
+                int prepTime = 1000 + random.nextInt(2000);
+                int orderId = getNextOrderId();
+
+                Order order = new Order(orderId, meal, prepTime, customer);
+                synchronized (orderQueue) {
+                    orderQueue.addOrder(order); // Bruk metoden fra OrderQueue
+                }
+
+                System.out.println(customer.getName() + " la inn en ny bestilling: " + meal);
+            }
+        } catch (InterruptedException e) {
+            System.out.println(customer.getName() + " avslutter bestillinger.");
+            Thread.currentThread().interrupt();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private static int nextOrderId = 6; // Fortsetter etter sample-order #5
+
+    private static synchronized int getNextOrderId() {
+        return nextOrderId++;
     }
 }
 
@@ -123,6 +163,22 @@ class OrderQueue {
             }
         }
     }
+
+    public void addOrder(Order order) throws InterruptedException {
+        synchronized (lock) {
+            while (orders.size() >= maxOrders) {
+                System.out.println("Køen er full – " + order.getCustomer().getName() + " venter...");
+                lock.wait(); // vent til det er plass
+            }
+
+            orders.offer(order);
+            System.out.println(" -> Ny bestilling: ID " + order.getOrderId() + " (" + order.getMealType() + ")");
+            updateGuiList();
+            lock.notifyAll();
+        }
+    }
+
+
     private void updateGuiList(){
         if (uiOrderList != null) {
             Platform.runLater(() -> {
@@ -197,6 +253,17 @@ public class HelloApplication extends Application {
         cook1.start();
         cook2.start();
         cook3.start();
+
+        Customer cust1 = new Customer(101, "Alice");
+        Customer cust2 = new Customer(102, "Bob");
+        Customer cust3 = new Customer(103, "Charlie");
+        Customer cust4 = new Customer(104, "Diana");
+
+        new Thread(new CustomerTask(cust1, orderQueue)).start();
+        new Thread(new CustomerTask(cust2, orderQueue)).start();
+        new Thread(new CustomerTask(cust3, orderQueue)).start();
+        new Thread(new CustomerTask(cust4, orderQueue)).start();
+
 
         // --- UI Setup ---
         VBox leftPanel = new VBox(10);
